@@ -19,6 +19,17 @@ const eslintConfig = [
     ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts"],
   },
 
+  // 👇 Alias resolver so ESLint understands @/*
+  {
+    settings: {
+      "import/resolver": {
+        typescript: {
+          project: "./tsconfig.json",
+        },
+      },
+    },
+  },
+
   // Prettier plugin (must come last)
   eslintPluginPrettierRecommended,
 ];
