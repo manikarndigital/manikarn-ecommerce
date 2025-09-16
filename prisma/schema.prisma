@@ -4,27 +4,296 @@
 // Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
-
-
+// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// Common helpers
+enum Currency {
+  INR
+  USD
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  REQUIRES_PAYMENT_METHOD
+  SUCCEEDED
+  FAILED
+  REFUNDED
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
+  id        String    @id @default(cuid())
+  email     String?   @unique
   name      String?
-  createdAt DateTime @default(now())
+  image     String?
+  // B2B link (optional)
+  companyId String?
+  company   Company?  @relation(fields: [companyId], references: [id])
+  addresses Address[]
+  carts     Cart[]
+  orders    Order[]
+  accounts  Account[]
+  // timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  Session   Session[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Company {
+  id         String      @id @default(cuid())
+  name       String
+  gstNumber  String?     @unique
+  priceLists PriceList[]
+  users      User[]
+  addresses  Address[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+}
+
+model Category {
+  id       String     @id @default(cuid())
+  slug     String     @unique
+  name     String
+  parentId String?
+  parent   Category?  @relation("CategoryToCategory", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryToCategory")
+  products Product[]
+}
+
+model Collection {
+  id       String    @id @default(cuid())
+  slug     String    @unique
+  name     String
+  products Product[] @relation("ProductsOnCollections") // <-- no references here
+}
+
+model Asset {
+  id        String    @id @default(cuid())
+  url       String
+  alt       String?
+  productId String? // to attach assets to a product
+  product   Product?  @relation(fields: [productId], references: [id], name: "ProductAssets")
+  createdAt DateTime  @default(now())
+  Product   Product[]
 }
 
 model Product {
+  id          String           @id @default(cuid())
+  slug        String           @unique
+  name        String
+  description String?
+  thumbnailId String?
+  thumbnail   Asset?           @relation(fields: [thumbnailId], references: [id])
+  categoryId  String?
+  category    Category?        @relation(fields: [categoryId], references: [id])
+  variants    ProductVariant[]
+  collections Collection[]     @relation("ProductsOnCollections")
+  assets      Asset[]          @relation("ProductAssets")
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model ProductVariant {
+  id         String  @id @default(cuid())
+  productId  String
+  name       String
+  // example: color=red,size=M stored in JSON for flexibility
+  attributes Json?
+  skus       SKU[]
+  product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model SKU {
+  id        String         @id @default(cuid())
+  variantId String
+  code      String         @unique // e.g. "TSHIRT-RED-M"
+  stock     Int            @default(0)
+  priceId   String?
+  price     Price?         @relation(fields: [priceId], references: [id])
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  CartItem  CartItem[]
+  OrderItem OrderItem[]
+}
+
+model Price {
+  id          String     @id @default(cuid())
+  currency    Currency   @default(INR)
+  amountMinor Int // in paise: ₹499 = 49900
+  // Optional—targeted price by pricelist
+  priceListId String?
+  priceList   PriceList? @relation(fields: [priceListId], references: [id], onDelete: SetNull)
+  SKU         SKU[]
+}
+
+model PriceList {
+  id        String    @id @default(cuid())
+  name      String
+  companyId String?
+  company   Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  validFrom DateTime?
+  validTo   DateTime?
+  prices    Price[]
+}
+
+model Address {
+  id         String   @id @default(cuid())
+  userId     String?
+  companyId  String?
+  fullName   String
+  phone      String?
+  line1      String
+  line2      String?
+  city       String
+  state      String
+  postalCode String
+  country    String   @default("IN")
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  company    Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  Order      Order[]
+}
+
+model Cart {
+  id        String     @id @default(cuid())
+  userId    String?
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items     CartItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model CartItem {
+  id     String @id @default(cuid())
+  cartId String
+  skuId  String
+  qty    Int    @default(1)
+  cart   Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  sku    SKU    @relation(fields: [skuId], references: [id], onDelete: Restrict)
+
+  @@unique([cartId, skuId]) // one row per SKU per cart
+}
+
+model Order {
+  id         String      @id @default(cuid())
+  userId     String?
+  addressId  String?
+  status     OrderStatus @default(PENDING)
+  items      OrderItem[]
+  paymentId  String?
+  payment    Payment?    @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  totalMinor Int // snapshot at time of order
+  currency   Currency    @default(INR)
+  taxRuleId  String?
+  taxRule    TaxRule?    @relation(fields: [taxRuleId], references: [id], onDelete: SetNull)
+  couponId   String?
+  coupon     Coupon?     @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  address Address? @relation(fields: [addressId], references: [id], onDelete: SetNull)
+}
+
+model OrderItem {
+  id         String @id @default(cuid())
+  orderId    String
+  skuId      String
+  qty        Int
+  priceMinor Int // price snapshot (paise)
+  order      Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sku        SKU    @relation(fields: [skuId], references: [id], onDelete: Restrict)
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  gateway     String // "razorpay" | "stripe" | "cod"
+  status      PaymentStatus @default(REQUIRES_PAYMENT_METHOD)
+  amountMinor Int
+  currency    Currency      @default(INR)
+  externalRef String? // gateway payment id
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  Order       Order[]
+}
+
+model Coupon {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  description String?
+  percentage  Int? // e.g. 10 = 10%
+  amountMinor Int? // fixed discount in minor units
+  active      Boolean   @default(true)
+  validFrom   DateTime?
+  validTo     DateTime?
+  Order       Order[]
+}
+
+model TaxRule {
+  id          String  @id @default(cuid())
+  name        String // e.g. "GST 18%"
+  ratePercent Int // 18 = 18%
+  hsnCode     String?
+  cgstPercent Int? // optional split
+  sgstPercent Int?
+  igstPercent Int?
+  active      Boolean @default(true)
+  Order       Order[]
+}
+
+model WebhookEvent {
   id        String   @id @default(cuid())
-  title     String
-  price     Int
+  topic     String // "order.paid", "payment.failed", etc.
+  payload   Json
   createdAt DateTime @default(now())
+
+  @@index([topic, createdAt])
 }

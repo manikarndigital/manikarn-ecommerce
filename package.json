@@ -4,12 +4,16 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build --turbopack",
+    "build": "prisma generate && next build --turbopack",
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "prisma:studio": "prisma studio",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "seed": "ts-node --project prisma/tsconfig.json --transpile-only prisma/seed.ts"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
@@ -42,6 +46,10 @@
     "prettier": "^3.6.2",
     "prisma": "^6.16.1",
     "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
     "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "ts-node --project prisma/tsconfig.json --transpile-only prisma/seed.ts"
   }
 }
